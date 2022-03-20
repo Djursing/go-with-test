@@ -32,13 +32,29 @@ func TestSumAll(t *testing.T) {
 }
 
 func TestSumAllTails(t *testing.T) {
-	arr1 := []int{1, 2}
-	arr2 := []int{0, 9}
 
-	got := SumAllTails(arr1, arr2)
-	exp := []int{2, 9}
-
-	if !reflect.DeepEqual(got, exp) {
-		t.Errorf("got %q, expected %q", exp, got)
+	checkSums := func(t testing.TB, got, exp []int) {
+		if !reflect.DeepEqual(got, exp) {
+			t.Errorf("got %q, expected %q", exp, got)
+		}
 	}
+
+	t.Run("make a the sums of some slices", func(t *testing.T) {
+		arr1 := []int{1, 2}
+		arr2 := []int{0, 9}
+
+		got := SumAllTails(arr1, arr2)
+		exp := []int{2, 9}
+		checkSums(t, got, exp)
+	})
+
+	t.Run("safely sum empty slices", func(t *testing.T) {
+		arr1 := []int{}
+		arr2 := []int{3, 4, 5}
+
+		got := SumAllTails(arr1, arr2)
+		exp := []int{0, 9}
+		checkSums(t, got, exp)
+	})
+
 }
