@@ -5,5 +5,22 @@ func Sum(nums []int) (sum int) {
 		sum += n
 	}
 
-	return sum
+	return
+}
+
+func SumAll(numbersToSum ...[]int) (sums []int) {
+	for _, n := range numbersToSum {
+		sums = append(sums, Sum(n))
+	}
+
+	return
+}
+
+func SumAllTails(numbersToSum ...[]int) (sums []int) {
+	for _, n := range numbersToSum {
+		tail := n[1:]
+		sums = append(sums, Sum(tail))
+	}
+
+	return
 }
