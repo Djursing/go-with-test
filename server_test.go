@@ -1,60 +1,52 @@
 package poker
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
-type StubPlayerStore struct {
-	scores   map[string]int
-	winCalls []string
-	league   League
-}
-
-func (s *StubPlayerStore) GetPlayerScore(name string) int {
-	return s.scores[name]
-}
-
-func (s *StubPlayerStore) RecordWin(name string) {
-	s.winCalls = append(s.winCalls, name)
-}
-
-func (s *StubPlayerStore) GetLeague() League {
-	return s.league
-}
-
-func TestGetPlayers(t *testing.T) {
+func TestGETPlayers(t *testing.T) {
 	store := StubPlayerStore{
 		map[string]int{
 			"Pepper": 20,
+			"Floyd":  10,
 		},
 		nil,
 		nil,
 	}
 	server := NewPlayerServer(&store)
 
-	t.Run("returns Peppers's score", func(t *testing.T) {
-		rq := newGetScoreRequest("Pepper")
-		rs := httptest.NewRecorder()
+	t.Run("returns Pepper's score", func(t *testing.T) {
+		request := newGetScoreRequest("Pepper")
+		response := httptest.NewRecorder()
 
-		server.ServeHTTP(rs, rq)
+		server.ServeHTTP(response, request)
 
-		assert.Equal(t, http.StatusOK, rs.Code)
-		assert.Equal(t, "20", rs.Body.String())
+		assertStatus(t, response.Code, http.StatusOK)
+		assertResponseBody(t, response.Body.String(), "20")
 	})
 
-	t.Run("returns 404 on missing player", func(t *testing.T) {
-		rq := newGetScoreRequest("Apollo")
-		rs := httptest.NewRecorder()
+	t.Run("returns Floyd's score", func(t *testing.T) {
+		request := newGetScoreRequest("Floyd")
+		response := httptest.NewRecorder()
 
-		server.ServeHTTP(rs, rq)
+		server.ServeHTTP(response, request)
 
-		assert.Equal(t, http.StatusNotFound, rs.Code)
+		assertStatus(t, response.Code, http.StatusOK)
+		assertResponseBody(t, response.Body.String(), "10")
+	})
+
+	t.Run("returns 404 on missing players", func(t *testing.T) {
+		request := newGetScoreRequest("Apollo")
+		response := httptest.NewRecorder()
+
+		server.ServeHTTP(response, request)
+
+		assertStatus(t, response.Code, http.StatusNotFound)
 	})
 }
 
@@ -66,21 +58,22 @@ func TestStoreWins(t *testing.T) {
 	}
 	server := NewPlayerServer(&store)
 
-	t.Run("it records a win on POST", func(t *testing.T) {
+	t.Run("it records wins on POST", func(t *testing.T) {
 		player := "Pepper"
-		rq := newPostWinRequest(player)
-		rs := httptest.NewRecorder()
 
-		server.ServeHTTP(rs, rq)
+		request := newPostWinRequest(player)
+		response := httptest.NewRecorder()
 
-		assert.Equal(t, http.StatusAccepted, rs.Code)
-		assert.Equal(t, 1, len(store.winCalls))
-		assert.Equal(t, store.winCalls[0], player)
+		server.ServeHTTP(response, request)
+
+		assertStatus(t, response.Code, http.StatusAccepted)
+		AssertPlayerWin(t, &store, player)
 	})
 }
 
 func TestLeague(t *testing.T) {
-	t.Run("returns the league table as JSON", func(t *testing.T) {
+
+	t.Run("it returns the League table as JSON", func(t *testing.T) {
 		wantedLeague := []Player{
 			{"Cleo", 32},
 			{"Chris", 20},
@@ -90,38 +83,70 @@ func TestLeague(t *testing.T) {
 		store := StubPlayerStore{nil, nil, wantedLeague}
 		server := NewPlayerServer(&store)
 
-		rq := newLeagueRequest()
-		rs := httptest.NewRecorder()
+		request := newLeagueRequest()
+		response := httptest.NewRecorder()
 
-		server.ServeHTTP(rs, rq)
+		server.ServeHTTP(response, request)
 
-		got := getLeagueFromResponse(t, rs.Body)
+		got := getLeagueFromResponse(t, response.Body)
 
-		assert.Equal(t, http.StatusOK, rs.Code)
-		assert.Equal(t, wantedLeague, got)
-		assert.Equal(t, jsonContentType, rs.Result().Header.Get("content-type"), "response did not have content-type of application/json")
+		assertStatus(t, response.Code, http.StatusOK)
+		assertLeague(t, got, wantedLeague)
+		assertContentType(t, response, jsonContentType)
+
 	})
 }
 
-func newGetScoreRequest(player string) *http.Request {
-	rq, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/players/%s", player), nil)
-	return rq
+func assertContentType(t testing.TB, response *httptest.ResponseRecorder, want string) {
+	t.Helper()
+	if response.Header().Get("content-type") != want {
+		t.Errorf("response did not have content-type of %s, got %v", want, response.HeaderMap)
+	}
 }
 
-func newPostWinRequest(player string) *http.Request {
-	rq, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("/players/%s", player), nil)
-	return rq
+func getLeagueFromResponse(t testing.TB, body io.Reader) []Player {
+	t.Helper()
+	league, err := NewLeague(body)
+
+	if err != nil {
+		t.Fatalf("Unable to parse response from server %q into slice of Player, '%v'", body, err)
+	}
+
+	return league
+}
+
+func assertLeague(t testing.TB, got, want []Player) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v want %v", got, want)
+	}
+}
+
+func assertStatus(t testing.TB, got, want int) {
+	t.Helper()
+	if got != want {
+		t.Errorf("did not get correct status, got %d, want %d", got, want)
+	}
 }
 
 func newLeagueRequest() *http.Request {
-	rq, _ := http.NewRequest(http.MethodGet, "/league", nil)
-	return rq
+	req, _ := http.NewRequest(http.MethodGet, "/League", nil)
+	return req
 }
 
-func getLeagueFromResponse(t testing.TB, body io.Reader) (league []Player) {
-	t.Helper()
-	err := json.NewDecoder(body).Decode(&league)
-	assert.NoError(t, err)
+func newGetScoreRequest(name string) *http.Request {
+	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/players/%s", name), nil)
+	return req
+}
 
-	return
+func newPostWinRequest(name string) *http.Request {
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("/players/%s", name), nil)
+	return req
+}
+
+func assertResponseBody(t testing.TB, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Errorf("response body is wrong, got %q want %q", got, want)
+	}
 }
